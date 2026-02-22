@@ -48,4 +48,22 @@ async function resolveIssue(description) {
     return response?.data?.content || "No response from agent";
 }
 
-export { resolveIssue };
+async function getModelsFromSDK() {
+    const client = new CopilotClient({
+        githubToken: process.env.GITHUB_TOKEN,
+        useLoggedInUser: false
+    });
+
+    try {
+        await client.start();
+        const models = await client.listModels();
+        return models;
+    } catch (error) {
+        console.error("Error fetching models:", error.message);
+        throw new Error("Failed to fetch models");
+    } finally {
+        await client.stop();
+    }
+}
+
+export { resolveIssue, getModelsFromSDK };

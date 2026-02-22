@@ -1,5 +1,5 @@
 import express from "express";
-import { resolveIssue } from "../utils/issueUtils.js";
+import { resolveIssue, getModelsFromSDK } from "../utils/apiUtils.js";
 
 const router = express.Router();
 
@@ -18,6 +18,18 @@ router.post('/issue', async (req, res) => {
         res.status(200).json({ message: "Issue resolved successfully", data: response });
     } catch(error) {
         return res.status(400).json({ error: error.message });
+    }
+});
+
+// GET models list
+router.get('/models/list', async (req, res) => {
+    try {
+        const models = await getModelsFromSDK();
+        res.status(200).json({ 
+            models
+        });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
     }
 });
 
