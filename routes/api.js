@@ -1,9 +1,11 @@
 import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { v4 as uuidv4 } from "uuid";
 
-import { resolveIssue, getModelsFromSDK } from "../utils/apiUtils.js";
+import { resolveIssue, getModelsFromSDK, upsertTicket, addComment, getCommentsForTicket } from "../utils/apiUtils.js";
 import User from "../models/user.js";
+import Ticket from "../models/ticket.js";
 
 
 const router = express.Router();
@@ -40,11 +42,12 @@ router.get('/models/list', async (req, res) => {
 
 router.post('/user', async (req, res) => {
     try {
-        const { userName, email, password } = req.body?.user || {};
+        const { userName, email, password, firstName, lastName } = req.body?.user || {};
         if (!userName || !email || !password) throw new Error("userName, email, and password are required");
 
         const passwordHash = await bcrypt.hash(password, 12);
-        const user = new User({ userName, email, passwordHash });
+        const id = uuidv4();
+        const user = new User({ userName, email, passwordHash, id, firstName, lastName });
         await user.save();
 
         res.status(200).json({ message: "User profile created successfully", data: user });
@@ -67,7 +70,7 @@ router.post('/login', async (req, res) => {
 
         // Generate JWT token
         const token = jwt.sign(
-            { id: user._id, email: user.email, userName: user.userName },
+            { id: user.id, email: user.email, userName: user.userName },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
         );
@@ -111,4 +114,100 @@ router.post('/logout', (req, res) => {
         res.status(400).json({ error: error.message });
     }
 });
+
+// GET /tickets/list - Retrieve all tickets
+router.get('/tickets/list', async (req, res) => {
+    try {
+        const tickets = await Ticket.find();
+        res.status(200).json({ message: "Tickets retrieved successfully", data: tickets });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// POST /ticket - Create a new ticket
+router.post('/ticket', async (req, res) => {
+    try {
+        const { title, description } = req.body;
+        if (!title || !description) {
+            throw new Error("title and description are required");
+        }
+        
+        const token = req.cookies.token;
+        if (!token) throw new Error("No token provided");
+        
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const userId = decoded.id;
+        const id = uuidv4();
+        
+        // Get the next ticket number
+        const lastTicket = await Ticket.findOne().sort({ number: -1 });
+        const nextNumber = lastTicket ? (parseInt(lastTicket.number) + 1).toString() : "1";
+        
+        const ticket = new Ticket({ title, description, userId, id, number: nextNumber });
+        await ticket.save();
+        
+        res.status(201).json({ message: "Ticket created successfully", data: ticket });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// PUT /ticket/:id - Update a ticket
+router.put('/ticket/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const token = req.cookies.token;
+        if (!token) throw new Error("No token provided");
+        
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const userId = decoded.id;
+        
+        // Upsert ticket using utility function
+        const ticket = await upsertTicket(id, userId, req.body);
+        
+        res.status(200).json({ message: "Ticket updated successfully", data: ticket });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// POST /ticket/:id/comment - Add a comment to a ticket
+router.post('/ticket/:id/comment', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { content } = req.body;
+        
+        if (!content) {
+            throw new Error("Comment content is required");
+        }
+        
+        const token = req.cookies.token;
+        if (!token) throw new Error("No token provided");
+        
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const userId = decoded.id;
+        
+        const comment = await addComment(id, userId, content);
+        
+        res.status(201).json({ message: "Comment added successfully", data: comment });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// GET /ticket/:id/comments - Get all comments for a ticket
+router.get('/ticket/:id/comments', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const comments = await getCommentsForTicket(id);
+        
+        res.status(200).json({ message: "Comments retrieved successfully", data: comments });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
 export default router;

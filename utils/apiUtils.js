@@ -1,4 +1,8 @@
 import { CopilotClient } from "@github/copilot-sdk";
+import { v4 as uuidv4 } from "uuid";
+import Ticket from "../models/ticket.js";
+import Comment from "../models/comment.js";
+import User from "../models/user.js";
 
 async function resolveIssue(description) {
     const client = new CopilotClient({
@@ -66,4 +70,72 @@ async function getModelsFromSDK() {
     }
 }
 
-export { resolveIssue, getModelsFromSDK };
+async function upsertTicket(ticketId, userId, { title, description, status }) {
+    try {
+        // Build update data
+        const updateData = {};
+        if (title) updateData.title = title;
+        if (description) updateData.description = description;
+        if (status) updateData.status = status;
+        
+        const result = await Ticket.findOneAndUpdate(
+            { id: ticketId, userId },
+            { 
+                ...updateData,
+                updatedAt: new Date()
+            },
+            { new: true, runValidators: true }
+        );
+        
+        if (!result) {
+            throw new Error("Ticket not found or you don't have permission to update it");
+        }
+        
+        return result;
+    } catch (error) {
+        throw new Error(`Failed to update ticket: ${error.message}`);
+    }
+}
+
+async function addComment(ticketId, userId, content) {
+    try {
+        if (!content || !content.trim()) {
+            throw new Error("Comment content is required");
+        }
+        
+        const id = uuidv4();
+        const comment = new Comment({ 
+            content, 
+            ticketId, 
+            userId, 
+            id 
+        });
+        await comment.save();
+        
+        return comment;
+    } catch (error) {
+        throw new Error(`Failed to add comment: ${error.message}`);
+    }
+}
+
+async function getCommentsForTicket(ticketId) {
+    try {
+        const comments = await Comment.find({ ticketId }).sort({ createdAt: -1 });
+        // Fetch user data for each comment
+        const commentsWithUser = await Promise.all(
+            comments.map(async (comment) => {
+                const user = await User.findOne({ id: comment.userId });
+                return {
+                    ...comment.toObject(),
+                    user: user ? { id: user.id, userName: user.userName, email: user.email } : null
+                };
+            })
+        );
+        
+        return commentsWithUser;
+    } catch (error) {
+        throw new Error(`Failed to retrieve comments: ${error.message}`);
+    }
+}
+
+export { resolveIssue, getModelsFromSDK, upsertTicket, addComment, getCommentsForTicket };
