@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 
-import { resolveIssue, getModelsFromSDK, upsertTicket, addComment, getCommentsForTicket } from "../utils/apiUtils.js";
+import { resolveIssue, getModelsFromSDK, upsertTicket, addComment, getCommentsForTicket, createIssue } from "../utils/apiUtils.js";
 import User from "../models/user.js";
 import Ticket from "../models/ticket.js";
 
@@ -146,6 +146,8 @@ router.post('/ticket', async (req, res) => {
         
         const ticket = new Ticket({ title, description, userId, id, number: nextNumber });
         await ticket.save();
+        const issueResponse = await createIssue(ticket.number, title, description);
+        await addComment(id, 'system-account', issueResponse);
         
         res.status(201).json({ message: "Ticket created successfully", data: ticket });
     } catch (error) {

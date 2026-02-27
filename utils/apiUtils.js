@@ -52,6 +52,57 @@ async function resolveIssue(description) {
     return response?.data?.content || "No response from agent";
 }
 
+async function createIssue(title, description) {
+    const client = new CopilotClient({
+        githubToken: process.env.GITHUB_TOKEN,
+        useLoggedInUser: false
+    });
+
+    let response = '';
+    let session;
+    try {
+        // Init client
+        await client.start();
+
+        // Start a session with the specified model 
+        session = await client.createSession({
+            model: process.env.MODEL,
+        });
+
+        const createIssuePrompt = import("../prompts/createIssuePrompt.js");
+
+        // Prompt agent
+        response = await session.sendAndWait({
+            prompt: `
+            The user has reported an issue. 
+
+            title: "${title}"
+            description: "${description}"
+            
+            The project has the following repositories: ${JSON.parse(process.env.TARGET_GH_REPO).join(", ")}. Search both repos using your GitHub tools to determine where the issue should be categorized.
+            
+            ${createIssuePrompt}
+            `
+        }, 300000); // 5 minute timeout for the agent to respond
+        console.log("Issue creation response:", response.data.content);
+    } catch (error) {
+        console.error("Error:", error.message);
+    } finally {
+        if (session) {
+            // Destroy session
+            await session.destroy();
+        }
+
+        // Stop client
+        await client.stop();
+    }
+
+    // Return agent's response or a default message if no response
+    return response?.data?.content || "No response from agent";
+
+
+}
+
 async function getModelsFromSDK() {
     const client = new CopilotClient({
         githubToken: process.env.GITHUB_TOKEN,
@@ -138,4 +189,4 @@ async function getCommentsForTicket(ticketId) {
     }
 }
 
-export { resolveIssue, getModelsFromSDK, upsertTicket, addComment, getCommentsForTicket };
+export { resolveIssue, getModelsFromSDK, upsertTicket, addComment, getCommentsForTicket, createIssue };
